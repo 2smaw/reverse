@@ -29,4 +29,4 @@ in malware to keep process trees tidy/predictable.
 
 ## Seen in
 
-- [sample-2026-08-mips-unknown](../../samples/sample-2026-08-mips-unknown/README.md)
+- [sample-2026-08-mips-unknown](../../samples/walkthrough.md)

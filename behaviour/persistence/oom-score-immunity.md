@@ -5,7 +5,7 @@
 tune this value; combined with other survivability behaviors it's a
 useful supporting signal, not a standalone verdict.
 
-## What it looks like in code
+## what it looks like in code
 
 ```c
 iVar3 = open("/proc/self/oom_score_adj", 1);  // O_WRONLY
@@ -15,7 +15,7 @@ if (iVar3 != -1) {
 }
 ```
 
-## Why malware does this
+## why malware does this
 
 Linux's OOM (out-of-memory) killer picks a process to kill when the
 system runs critically low on memory, weighted by each process's
@@ -26,7 +26,7 @@ terminated under memory pressure — improving its uptime/survivability
 on resource-constrained devices (a relevant concern specifically on
 IoT/embedded targets with limited RAM).
 
-## How to recognize it
+## how to recognize it
 
 - `open("/proc/self/oom_score_adj", ...)` followed by a `write()` of a
   small numeric string.
@@ -35,5 +35,4 @@ IoT/embedded targets with limited RAM).
 
 ## Seen in
 
-- [sample-2026-08-mips-unknown](../../samples/sample-2026-08-mips-unknown/README.md)
-  (write value not yet decoded/confirmed — noted as open question)
+- [sample-2026-08-mips-unknown](../../samples/walkthrough.md)
