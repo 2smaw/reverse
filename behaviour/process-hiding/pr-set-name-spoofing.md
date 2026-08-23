@@ -34,5 +34,5 @@ it as suspicious.
 
 ## Seen in
 
-- [sample-2026-08-mips-unknown](../../samples/sample-2026-08-mips-unknown/README.md)
+- [sample-2026-08-mips-unknown](../../samples/walkthrough.md)
   (call observed; actual name value not yet resolved — open question)

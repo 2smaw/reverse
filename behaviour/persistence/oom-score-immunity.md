@@ -35,4 +35,4 @@ IoT/embedded targets with limited RAM).
 
 ## Seen in
 
-- [sample-2026-08-mips-unknown](../../samples/walkthrough.md)
+- [sample-2026-6be287b7cd6746fbbf013eac0bd60507b929ab3691b4f4d7d302f25ea0e50a28](../../samples/6be287b7cd6746fbbf013eac0bd60507b929ab3691b4f4d7d302f25ea0e50a28.md)
