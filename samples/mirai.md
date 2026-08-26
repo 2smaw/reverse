@@ -20,7 +20,7 @@ there was a table_init() call in main. after decompiling, the pseudocode can be 
 | `0x08` | 8 | `"\rQVCVWQ\""` | `/status` | Process metadata |
 | `0x0a` | 10 | `"\rRPMA\rLGV\rPMWVG\""` | `/proc/net/ip_mr` | Multicast IP routing table |
 | `0x0b` | 11 | `"\rRPMA\rARWKLDM\""` | `/proc/cpuinfo` | CPU architecture info |
-| `0x0c` | 12 | `"`memokrq"` | `Bgocipos` | Obfuscated process string |
+| `0x0c` | 12 | `"`memokrq"` | `Bgocipos` | ??? |
 | `0x0e` | 14 | `"FTPjGNRGP\""` | `dvrHelper` | Targeted process to kill |
 | `0x13` | 19 | `"kW{EWHGkSL\""` | `iYyGVEiqj` | Botnet identity string |
 | `0x15` | 21 | `"AAcf\""` | `ccae` | XOR string / token |
@@ -55,6 +55,103 @@ there was a table_init() call in main. after decompiling, the pseudocode can be 
 | `0x6f` | 111 | `"QKELGF\""` | `signed` | Key checking flag |
 | `0x74` | 116 | `"UNCLAMLV"` | `wlkinojt` | Custom obfuscation token |
 
+---
+
+## `main`'s setup sequence (top-level call list)
+
+Full call list, in order, before the socket-setup block above:
+
+```
+table_init()
+sigemptyset(&sStack_190)
+sigaddset(&sStack_190, 2)               // SIGINT
+sigprocmask(1, &sStack_190, NULL)       // block SIGINT
+signal(0x12, SIG_IGN)                   // SIGCHLD ignored -> expect fork() later
+signal(5, 0x4ed0)                       // SIGTRAP -> custom handler
+signal(0xd, SIG_IGN)                    // SIGPIPE ignored -> standard for network code
+hide_init()                             // see section 4 below
+chdir("/")
+prctl(1, 9)                             // PR_SET_PDEATHSIG, SIGKILL
+prctl(4, 0)                             // PR_SET_DUMPABLE, disabled
+prctl(0x26, 1, 0, 0, 0)                 // PR_SET_NAME (value arg unresolved)
+open("/proc/self/oom_score_adj", O_WRONLY)
+  write(fd, &UNK_00048ed0, 5)
+  close(fd)
+open("/proc/self/exe", O_RDONLY)
+  close(fd)                             // no read in between — unresolved
+rand_next()
+  [~33% chance] rand_next(); sleep(rand % 120)
+util_local_addr()
+```
+
+See [local IPv4 address discovery via connected socket](../behaviour/network-discovery/local-ip-address-discovery.md).
+
+No argument parsing (`mainArg1`/`mainArg2`) touched before this entire
+sequence — notable by absence; ordinary CLI programs typically parse
+args or read config first.
+
+Each behavior in this list mapped to its dictionary entry:
+[anti-debug-sigtrap-handler.md](../../behaviors/evasion/anti-debug-sigtrap-handler.md),
+[disable-core-dumps.md](../../behaviors/evasion/disable-core-dumps.md),
+[sandbox-jitter-sleep.md](../../behaviors/evasion/sandbox-jitter-sleep.md),
+[oom-score-immunity.md](../../behaviors/persistence/oom-score-immunity.md),
+[pdeathsig-parent-tracking.md](../../behaviors/persistence/pdeathsig-parent-tracking.md),
+[pr-set-name-spoofing.md](../../behaviors/process-hiding/pr-set-name-spoofing.md).
+
+`signal(SIGCHLD, SIG_IGN)` is a useful forward-looking clue: this idiom
+is only really used when the process expects to `fork()` children
+repeatedly and doesn't want to reap zombies — worth watching for
+`fork()`/`clone()` calls later in the binary.
+
+---
+
+## 4. `hide_init()`
+
+```c
+void hide_init(void) {
+  int local_18[3];
+  local_18[0] = 1;
+  table_unlock_val(0x24);
+  table_unlock_val(0x25);
+  char *path = table_retrieve_val(0x24, 0);
+  int fd = open(path, 2);
+  if (fd == -1) {
+    path = table_retrieve_val(0x25, 0);
+    fd = open(path, 2);
+    if (fd == -1) goto done;
+  }
+  ioctl(fd, 0x80045704, local_18);
+  close(fd);
+done:
+  table_lock_val(0x24);
+  table_lock_val(0x25);
+}
+```
+
+`table_unlock_val`/`table_retrieve_val`/`table_lock_val` trio matches
+the [obfuscated string table idiom](../../behaviors/anti-forensics/string-table-lock-unlock-obfuscation.md)
+— paths at table slots `0x24`/`0x25` aren't visible in a static strings
+dump.
+
+Open-with-fallback-path pattern (`0x24` primary, `0x25` fallback on
+failure) matches the classic pattern for a device file whose path
+varies across systems — candidates: `/dev/watchdog`,
+`/dev/misc/watchdog` (not yet confirmed by decoding the table).
+
+`ioctl(fd, 0x80045704, &options)` with `options[0] = 1`: `0x80045704`
+resolved against `<linux/watchdog.h>` as `WDIOC_SETOPTIONS`; value `1`
+is `WDIOS_DISABLECARD`. **This disables the hardware watchdog timer**
+— full reasoning and significance in
+[watchdog-disable.md](../../behaviors/persistence/watchdog-disable.md).
+
+**Corrected assumption:** the function name `hide_init` initially
+suggested process/visibility hiding (matching the `PR_SET_NAME` call
+seen in `main`). The actual code does something adjacent but distinct
+— survivability/anti-recovery via watchdog disable, not concealment.
+Function names are a hypothesis to verify, not a conclusion — see
+[reading-decompiler-output.md](../../techniques/reading-decompiler-output.md) §8.
+
+---
 ## socket setup block 
 
 ```c
@@ -172,100 +269,6 @@ ASCII `.`.
 Documented as [domain-substring-matching.md](../../behaviors/c2-networking/domain-substring-matching.md).
 **Not yet traced further** — what happens at `LAB_0001b370` with `len`
 is an open question.
-
----
-
-## `main`'s setup sequence (top-level call list)
-
-Full call list, in order, before the socket-setup block above:
-
-```
-table_init()
-sigemptyset(&sStack_190)
-sigaddset(&sStack_190, 2)               // SIGINT
-sigprocmask(1, &sStack_190, NULL)       // block SIGINT
-signal(0x12, SIG_IGN)                   // SIGCHLD ignored -> expect fork() later
-signal(5, 0x4ed0)                       // SIGTRAP -> custom handler
-signal(0xd, SIG_IGN)                    // SIGPIPE ignored -> standard for network code
-hide_init()                             // see section 4 below
-chdir("/")
-prctl(1, 9)                             // PR_SET_PDEATHSIG, SIGKILL
-prctl(4, 0)                             // PR_SET_DUMPABLE, disabled
-prctl(0x26, 1, 0, 0, 0)                 // PR_SET_NAME (value arg unresolved)
-open("/proc/self/oom_score_adj", O_WRONLY)
-  write(fd, &UNK_00048ed0, 5)
-  close(fd)
-open("/proc/self/exe", O_RDONLY)
-  close(fd)                             // no read in between — unresolved
-rand_next()
-  [~33% chance] rand_next(); sleep(rand % 120)
-util_local_addr()
-```
-
-No argument parsing (`mainArg1`/`mainArg2`) touched before this entire
-sequence — notable by absence; ordinary CLI programs typically parse
-args or read config first.
-
-Each behavior in this list mapped to its dictionary entry:
-[anti-debug-sigtrap-handler.md](../../behaviors/evasion/anti-debug-sigtrap-handler.md),
-[disable-core-dumps.md](../../behaviors/evasion/disable-core-dumps.md),
-[sandbox-jitter-sleep.md](../../behaviors/evasion/sandbox-jitter-sleep.md),
-[oom-score-immunity.md](../../behaviors/persistence/oom-score-immunity.md),
-[pdeathsig-parent-tracking.md](../../behaviors/persistence/pdeathsig-parent-tracking.md),
-[pr-set-name-spoofing.md](../../behaviors/process-hiding/pr-set-name-spoofing.md).
-
-`signal(SIGCHLD, SIG_IGN)` is a useful forward-looking clue: this idiom
-is only really used when the process expects to `fork()` children
-repeatedly and doesn't want to reap zombies — worth watching for
-`fork()`/`clone()` calls later in the binary.
-
----
-
-## 4. `hide_init()`
-
-```c
-void hide_init(void) {
-  int local_18[3];
-  local_18[0] = 1;
-  table_unlock_val(0x24);
-  table_unlock_val(0x25);
-  char *path = table_retrieve_val(0x24, 0);
-  int fd = open(path, 2);
-  if (fd == -1) {
-    path = table_retrieve_val(0x25, 0);
-    fd = open(path, 2);
-    if (fd == -1) goto done;
-  }
-  ioctl(fd, 0x80045704, local_18);
-  close(fd);
-done:
-  table_lock_val(0x24);
-  table_lock_val(0x25);
-}
-```
-
-`table_unlock_val`/`table_retrieve_val`/`table_lock_val` trio matches
-the [obfuscated string table idiom](../../behaviors/anti-forensics/string-table-lock-unlock-obfuscation.md)
-— paths at table slots `0x24`/`0x25` aren't visible in a static strings
-dump.
-
-Open-with-fallback-path pattern (`0x24` primary, `0x25` fallback on
-failure) matches the classic pattern for a device file whose path
-varies across systems — candidates: `/dev/watchdog`,
-`/dev/misc/watchdog` (not yet confirmed by decoding the table).
-
-`ioctl(fd, 0x80045704, &options)` with `options[0] = 1`: `0x80045704`
-resolved against `<linux/watchdog.h>` as `WDIOC_SETOPTIONS`; value `1`
-is `WDIOS_DISABLECARD`. **This disables the hardware watchdog timer**
-— full reasoning and significance in
-[watchdog-disable.md](../../behaviors/persistence/watchdog-disable.md).
-
-**Corrected assumption:** the function name `hide_init` initially
-suggested process/visibility hiding (matching the `PR_SET_NAME` call
-seen in `main`). The actual code does something adjacent but distinct
-— survivability/anti-recovery via watchdog disable, not concealment.
-Function names are a hypothesis to verify, not a conclusion — see
-[reading-decompiler-output.md](../../techniques/reading-decompiler-output.md) §8.
 
 ---
 

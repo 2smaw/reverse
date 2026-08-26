@@ -27,6 +27,9 @@ samples in this repo exhibit it.
 - [Hardcoded port bind (UDP listener setup)](./c2-networking/hardcoded-port-bind.md)
 - [Domain substring matching (dot-delimited parsing)](./c2-networking/domain-substring-matching.md)
 
+### Network Discovery
+- [Local IPv4 address discovery via connected socket](./network-discovery/local-ip-address-discovery.md)
+
 ## How entries are structured
 
 Each entry follows the same template: what it looks like in code, why
